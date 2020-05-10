@@ -804,7 +804,7 @@ f_find_callback:
 f_find_callback_first:
 	; compute length; the flen field contains padding bytes
 	mov	ax,[readdir_flen]
-	cmp	ax,11
+	cmp	ax,12
 	jg	f_find_callback_skip	; no, skip
 
 	; is the type sane?
