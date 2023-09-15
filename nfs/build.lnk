@@ -1,0 +1,10 @@
+option map
+format dos com
+debug all
+# resident pieces (resident.obj must be first, res_end.obj must be last)
+file resident.obj,helper.obj,net.obj,nfs.obj,redir.obj,rpc.obj,res_end.obj
+# non-resident pieces
+file helper2.obj,redir2.obj,net2.obj,dhcp.obj,print.obj,main.obj
+order
+    clname CODE segment RESTEXT segment _TEXT
+name nfspkt.com

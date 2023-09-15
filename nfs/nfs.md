@@ -13,7 +13,8 @@ Allow you to conveniently use a NFSv3 server from your DOS machine.
 - Supports ICMP echo/response
 
 ## Building
-Simply run ``build.sh`` - you need to have nasm and mtools installed.
+
+Simply run ``build.sh`` - you need to have [OpenWatcom](https://github.com/open-watcom/open-watcom-v2) (I used the [September 2023 snapshop of version 2.0](https://github.com/open-watcom/open-watcom-v2/releases/tag/2023-09-01-Build)) and mtools installed.
 
 The output is a 1.44MB floppy disk image, ``floppy.img``, which contains a ``n.com`` which is the NFS client.
 
@@ -27,7 +28,7 @@ Supported arguments:
 - /ip:x.x.x.x - use x.x.x.x as the IPv4 address (default: DHCP)
 
 ## Options
-The source code has some knobs you can tweak, with their current defaults:
+``settings.inc`` contains some knobs you can tweak, with their current defaults:
 
 - RPC_SHOW_INDICATOR (=1): if non-zero, show a 'N' in the top-right corner while active
 - NFS_CASE (=1): controls the expected case on the server. 1 = uppercase, 2 = lowercase, 0 = any case
@@ -43,16 +44,21 @@ And a lot of flags used while developing:
 - REDIR_DEBUG_CALLS (=0): if non-zero, logs INT 2F redir command numbers to the console
 
 ## Source code organisation
-``nfspkt.asm`` is the assembler input file with all options which includes most of the other files. Files that end with a 2 (like net2.asm) are never resident in memory.
+
+The code consists of two parts:
+
+- The resident portion, in the segment RESTEXT, which will be in memory at all times
+- The initialization portion, in the segment TEXT, which is discarded after use
 
 ## Caveats / TODO
 
+- Better runtime configuration (user ID/group ID, filename casing, ...)
 - UDP fragmentation is not supported
 - Server and client must be in the same subnet (no gateway support)
 - Retries need to be implemented
 - Still some bugs left (some functions don't return the exact same result as DOS expects)
-- User ID/group ID can't be changed
 - Swapping to EMS/XMS
 - DNS is not supported
 - Lack of proper input validation (use only on trusted networks)
-- Not all redir commands are implemented
+- Not all redir commands are implemented (for example: remove directory, rename, ...)
+- Rewrite initialization/helper code in C

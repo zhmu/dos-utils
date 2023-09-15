@@ -1,5 +1,19 @@
 ; vim:set ts=8 sw=8 noet:
 
+_text	segment byte public use16 'code'
+
+include defines.inc
+
+extern recv_len: word
+extern udp_send: proc
+extern xid: dword
+extern xmitbuf: byte
+extern my_hwaddr: byte
+extern recvbuf: byte
+extern my_ip: dword
+
+public dhcp_request
+
 ; dhcp_call: performs DHCP request and waits for the reply
 ; input: dl = packet type, options @ xmitbuf+OFFSET_DHCPOPTS,
 ;        cx = options length
@@ -7,26 +21,26 @@
 ;                               bp = server id (zero if not present)
 dhcp_call:
 	; increment xid
-	inc	word [xid+0]
-	adc	word [xid+2],0
+	inc	word ptr [xid+0]
+	adc	word ptr [xid+2],0
 
 	; fill out the packet
 	push	cx
-	mov	di,xmitbuf+OFFSET_UDPDATA
+	mov	di,offset xmitbuf+OFFSET_UDPDATA
 	mov	ax,0101h		; operation/htype
 	stosw
 	mov	ax,0006h		; hlen/hops
 	stosw
-	mov	ax,word [xid+0]		; xid lo
+	mov	ax,word ptr [xid+0]	; xid lo
 	stosw
-	mov	ax,word [xid+2]		; xid hi
+	mov	ax,word ptr [xid+2]	; xid hi
 	stosw
 	xor	ax,ax
 	stosw				; secs
 	stosw				; flags
 	mov	cx,8
 	rep	stosw			; [csg]iaddr
-	mov	si,my_hwaddr
+	mov	si,offset my_hwaddr
 	mov	cx,3
 	rep	movsw			; hwaddr
 	mov	cx,5
@@ -48,7 +62,7 @@ dhcp_call:
 	add	di,bp
 	mov	al,255
 	stosb				; end of options
-	sub	di,xmitbuf+OFFSET_UDPDATA
+	sub	di,offset xmitbuf+OFFSET_UDPDATA
 	mov	bp,di			; length
 
 	; reset response
@@ -63,24 +77,24 @@ dhcp_call:
 
 dhcp_wait_reset:
 	xor	ax,ax
-	mov	[recv_len],ax
+	mov	word ptr [recv_len],ax
 
 dhcp_wait:
 	mov	ah,1		; keyboard: check for keystroke
 	int	16h
 	jnz	dhcp_error	; if any, abort
 
-	mov	dx,[recv_len]
+	mov	dx,word ptr [recv_len]
 	cmp	dx,247		; must be at least 247 bytes
 	jl	dhcp_wait_reset	; (BOOTP with DHCP options)
 
 	; ok, is this a reply?
-	mov	si,recvbuf
-	cmp	byte [si],2
+	mov	si,offset recvbuf
+	cmp	byte ptr [si],2
 	jne	dhcp_wait_reset	; no, discard
 
 	; is this for our xid?
-	mov	di,xid
+	mov	di,offset xid
 	add	si,4
 	mov	cx,2
 	repe	cmpsw
@@ -98,8 +112,8 @@ dhcp_wait:
 
 	; calculate options length
 	mov	ax,si
-	sub	ax,recvbuf
-	mov	cx,[recv_len]
+	sub	ax,offset recvbuf
+	mov	cx,word ptr [recv_len]
 	sub	cx,ax
 
 	; now walk through the options and fetch the DHCP type and
@@ -162,8 +176,8 @@ dhcp_request:
 	jz	dhcp_error	; no, reject
 
 	; ok, we have obtained a valid address - copy it
-	mov	si,recvbuf+16	; yiaddr
-	mov	di,my_ip
+	mov	si,offset recvbuf+16	; yiaddr
+	mov	di,offset my_ip
 	mov	cx,2
 	rep	movsw
 
@@ -174,10 +188,10 @@ dhcp_request:
 	; insert selected server in "server identifier"
 	; ciaddr must be zero
 	; requested ip address = yiaddr
-	mov	di,xmitbuf+OFFSET_DHCPOPTS
+	mov	di,offset xmitbuf+OFFSET_DHCPOPTS
 	mov	ax,0432h	; option: requested ip address, length 4
 	stosw
-	mov	si,my_ip
+	mov	si,offset my_ip
 	mov	cx,2
 	rep	movsw
 
@@ -196,3 +210,6 @@ dhcp_request:
 	jne	dhcp_error
 	stc
 	ret
+
+_text	ends
+	end

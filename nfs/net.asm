@@ -1,54 +1,78 @@
 ; vim:set ts=8 sw=8 noet:
 
+RESTEXT		segment word public 'CODE'
 
-pktdrv_call:
-	db	0cdh	; INT
+include defines.inc
+include macro.inc
+include settings.inc
+
+extern arpbuf: byte
+extern server_ip: dword
+extern server_hwaddr: byte
+extern server_hwaddr_valid: byte
+extern my_ip: dword
+extern my_hwaddr: byte
+extern recv_len: word
+extern pktbuf: byte
+extern recvbuf: byte
+extern xmitbuf: byte
+extern ip_id: word
+
+public pktdrv_call
+public udp_send
+public pktdrv_int
+
+pktdrv_call    proc
+		db	0cdh	; INT
 pktdrv_int:
-	db	0	; patched as needed
-	ret
+		db	0	; patched as needed
+		ret
+pktdrv_call    endp
 
-struc		e_hdr
-eh_dst:		resb    6		; 0
-eh_src:		resb    6		; 6
-eh_hwtype:	resw    1		; 12
-endstruc
+e_hdr		struc
+eh_dst:		db	6 dup (?)	; 0
+eh_src:		db	6 dup (?)	; 6
+eh_hwtype:	dw	?		; 12
+e_hdr		ends
 
-struc		ip_hdr
-ip_vlen:	resb	1		; 0
-ip_tos:		resb	1		; 1
-ip_len:		resw	1		; 2
-ip_iid:		resw	1		; 4
-ip_ffrag:	resw	1		; 6
-ip_ttl:		resb	1		; 8
-ip_proto:	resb	1		; 9
-ip_hchk:	resw	1		; 10
-ip_saddr:	resd	1		; 12
-ip_daddr:	resd	1		; 14
-endstruc
+ip_hdr		struc
+ip_vlen:	db	?		; 0
+ip_tos:		db	?		; 1
+ip_len:		dw	?		; 2
+ip_iid:		dw	?		; 4
+ip_ffrag:	dw	?		; 6
+ip_ttl:		db	?		; 8
+ip_proto:	db	?		; 9
+ip_hchk:	dw	?		; 10
+ip_saddr:	dd	?		; 12
+ip_daddr:	dd	?		; 14
+ip_hdr		ends
 
-struc		udp_hdr
-udp_sport:	resw	1		; 0
-udp_dport:	resw	1		; 2
-udp_len:	resw	1		; 4
-udp_cksum:	resw	1		; 6
-endstruc
+udp_hdr		struc
+udp_sport:	dw	?		; 0
+udp_dport:	dw	?		; 2
+udp_len:	dw	?		; 4
+udp_cksum:	dw	?		; 6
+udp_hdr		ends
 
 ;
 ; arp_receiver: called when the NIC driver receives an ARP packet
 ;
-arp_receiver:
-	; bx = handle, ax = flag, cx = len
-	or	ax,ax		; length req?
-	jnz	arp_data	; no -> handle data
+public		arp_receiver
+arp_receiver	proc
+		; bx = handle, ax = flag, cx = len
+		or	ax,ax		; length req?
+		jnz	arp_data	; no -> handle data
 
-	cmp	cx,arpbuf_len	; can we store the packet?
-	jge	pkt_reject	; no; reject buffer
+		cmp	cx,ARPBUF_LEN	; can we store the packet?
+		jge	pkt_reject	; no; reject buffer
 
-	; packet will fit, hand buffer
-	mov	ax,cs
-	mov	es,ax
-	mov	di,arpbuf
-	retf
+		; packet will fit, hand buffer
+		mov	ax,cs
+		mov	es,ax
+		mov	di,offset arpbuf
+		retf
+arp_receiver	endp
 
 arp_data:
 	;
@@ -69,26 +93,26 @@ arp_data:
 
 	; do basic hw/prot/hs/ps checks first; ft doesn't need checking since
 	; the packet driver does that for us
-	cmp	word [si+14],100h	; hw type must be 1
+	cmp	word ptr [si+14],100h	; hw type must be 1
 	jne	arp_ignore
-	cmp	word [si+16],8h	; prot must be 8
+	cmp	word ptr [si+16],8h	; prot must be 8
 	jne	arp_ignore
-	cmp	word [si+18],0406h	; hs must be 6, ps must be 4
+	cmp	word ptr [si+18],0406h	; hs must be 6, ps must be 4
 	jne	arp_ignore
 
 	; ok, we likely need to work on this. set some stuff up
 	push	cs
 	pop	es
 
-	cmp	word [si+20],100h	; arp request?
+	cmp	word ptr [si+20],100h	; arp request?
 	je	arp_request
-	cmp	word [si+20],200h	; arp reply?
+	cmp	word ptr [si+20],200h	; arp reply?
 	jne	arp_ignore
 
 arp_reply:
 	; target is the server ip?
 	push	si
-	mov	di,server_ip
+	mov	di,offset server_ip
 	add	si,28			; target address
 	mov	cx,2
 	repe	cmpsw
@@ -97,18 +121,18 @@ arp_reply:
 
 	; copy frame's source address
 	add	si,6
-	mov	di,server_hwaddr
+	mov	di,offset server_hwaddr
 	mov	cx,3
 	rep	movsw
 
 	; mark the server address as valid
-	inc	byte [server_hwaddr_valid]
+	inc	byte ptr [server_hwaddr_valid]
 	retf
 
 arp_request:
 	; target is us?
 	push	si
-	mov	di,my_ip
+	mov	di,offset my_ip
 	add	si,38			; target address
 	mov	cx,2
 	repe	cmpsw
@@ -124,7 +148,7 @@ arp_request:
 	mov	[si+30],ax
 
 	; set operation to reply
-	inc	byte [si+21]
+	inc	byte ptr [si+21]
 
 	; copy source hw address to frame/dest; we are replying to it
 	mov	di,si
@@ -138,7 +162,7 @@ arp_c1:	lodsw
 	loop	arp_c1
 
 	; fill out our hw address; note that di=pkt+6 at this point
-	mov	si,my_hwaddr
+	mov	si,offset my_hwaddr
 	mov	cx,3
 arp_c2:	lodsw
 	mov	[es:di],ax
@@ -149,7 +173,7 @@ arp_c2:	lodsw
 
 	; off it goes!
 	mov	ah,4		; pktdrv: send_pkt
-	mov	si,arpbuf
+	mov	si,offset arpbuf
 	mov	cx,63
 	call	pktdrv_call
 
@@ -165,40 +189,42 @@ pkt_reject:
 ;
 ; ip_receiver: called when the NIC driver receives an IP packet in ds:si
 ;
-ip_receiver:
-	; bx = handle, ax = flag, cx = len
-	or	ax,ax		; length req?
-	jnz	ip_data		; no -> handle data
+public		ip_receiver
+ip_receiver	proc
+		; bx = handle, ax = flag, cx = len
+		or	ax,ax		; length req?
+		jnz	ip_data		; no -> handle data
 
-%if 1
-	; got data pending?
-	cmp	word [cs:recv_len],0
-	;jnz	pkt_reject	; KOE - fixen
-	jz	OOKK
+if 1
+		; got data pending?
+		cmp	word ptr [cs:recv_len],0
+		;jnz	pkt_reject	; KOE - fixen
+		jz	OOKK
 
-	mov	ax,0e21h ; '!'
-	int     10h
-	int3
-	jmp	pkt_reject
+		mov	ax,0e21h ; '!'
+		int     10h
+		int	3
+		jmp	pkt_reject
 OOKK:
-%endif
+endif
 
-	cmp	cx,pktbuf_len	; can we store the packet?
-	jg	pkt_reject	; no, reject it
+		cmp	cx,PKTBUF_LEN	; can we store the packet?
+		jg	pkt_reject	; no, reject it
 
-	; packet will fit, hand buffer
-	mov	ax,cs
-	mov	es,ax
-	mov	di,pktbuf
-	retf
+		; packet will fit, hand buffer
+		mov	ax,cs
+		mov	es,ax
+		mov	di,offset pktbuf
+		retf
+ip_receiver	endp
 
 ip_data:
 	push    cs
 	pop	es
 
 	; verify the destination IP address
-	add	si,e_hdr_size+ip_daddr
-	mov	di,my_ip
+	add	si,size e_hdr+ip_daddr
+	mov	di,offset my_ip
 	mov	cx,2
 	push	si
 	repe	cmpsw
@@ -206,9 +232,9 @@ ip_data:
 	je	ip_forus
 
 	; IP address mismatch; is our address all zero (i.e. we don't know) ?
-	cmp	word [my_ip],0
+	cmp	word ptr [my_ip],0
 	jne	ip_discard
-	cmp	word [my_ip+2],0
+	cmp	word ptr [my_ip+2],0
 	jz	ip_forus
 
 ip_discard:
@@ -218,14 +244,14 @@ ip_forus:
 	sub	si,ip_daddr	; move pointer back to ip header
 
 	; calculate pointer to inner protocol data
-	mov	bx,[si+ip_vlen]
+	mov	bx,word ptr [si+ip_vlen]
 	and	bx,0fh
 	shl	bx,1
 	shl	bx,1		; bx = length of ip header
 	lea	bp,[si+bx]	; bp = payload
 
 	; ok, this packet is for us; see if it's ICMP or UDP
-	mov	al,[si+ip_proto]
+	mov	al,byte ptr [si+ip_proto]
 	cmp	al,PROTO_UDP	; udp
 	je	udp_receive
 	cmp	al,PROTO_ICMP	; icmp
@@ -236,36 +262,36 @@ ip_forus:
 
 udp_receive:
 	; si = ip header, bp = udp header - is the destination port okay?
-	mov	ax,[ds:bp+udp_dport]
+	mov	ax,word ptr [ds:bp+udp_dport]
 	xchg	ah,al
 
 	; calculate UDP length
-	mov	cx,[si+ip_len]
+	mov	cx,word ptr [si+ip_len]
 	xchg	ch,cl
 	sub	cx,bx		; cx = UDP length (incl header)
 
 	; check the UDP length
-	mov	ax,[ds:bp+udp_len]
+	mov	ax,word ptr [ds:bp+udp_len]
 	xchg	ah,al
 	cmp	ax,cx
 	jne	ip_discard
 
 	; XXX verify checksum
-	sub	ax,udp_hdr_size	; skip header
+	sub	ax,size udp_hdr		; skip header
 
 	; copy UDP packet contents
-	lea	si,[bp+udp_hdr_size]
-	mov	di,recvbuf
+	lea	si,[bp+size udp_hdr]
+	mov	di,offset recvbuf
 	mov	cx,ax
 	rep	movsb
 
 	; all set, store length
-	mov	[recv_len],ax
+	mov	word ptr [recv_len],ax
 	retf
 
 icmp_receive:
 	; bp = ip header
-	cmp	word [ds:bp],8h	; icmp echo req?
+	cmp	word ptr [ds:bp],8h	; icmp echo req?
 	je	icmp_echoreq
 
 	; XXX we only handle echo request
@@ -300,7 +326,7 @@ icmp_echoreq:
 	dec	cx
 
 	; need to fix the ICMP checksum
-	mov	si,xmitbuf+34	; skip frame+IP header
+	mov	si,offset xmitbuf+34	; skip frame+IP header
 	lodsw
 	mov	bx,ax
 icmp_cksum:
@@ -311,12 +337,12 @@ icmp_cksum:
 	not	bx
 
 	; store the checksum
-	mov	si,xmitbuf+36
+	mov	si,offset xmitbuf+36
 	mov	[si],bx
 
 	; off it goes!
 	mov	ah,4		; pktdrv: send_pkt
-	mov	si,xmitbuf
+	mov	si,offset xmitbuf
 	mov	cx,bp
 	add	cx,34		; ip header + frame header
 	call	pktdrv_call
@@ -330,14 +356,14 @@ icmp_cksum:
 ; corrupts: ax, bx, si
 ;
 ip_make:
-	mov	di,xmitbuf
+	mov	di,offset xmitbuf
 	; frame: destination hw address
-	mov	si,server_hwaddr
+	mov	si,offset server_hwaddr
 	movsw
 	movsw
 	movsw
 	; frame: source hw address
-	mov	si,my_hwaddr
+	mov	si,offset my_hwaddr
 	movsw
 	movsw
 	movsw
@@ -353,8 +379,8 @@ ip_make:
 	xchg	ah,al
 	stosw
 	; ip: identification
-	inc	word [ip_id]
-	mov	ax,[ip_id]
+	inc	word ptr [ip_id]
+	mov	ax,word ptr [ip_id]
 	xchg	ah,al
 	stosw
 	; ip: flags, fragment
@@ -368,11 +394,11 @@ ip_make:
 	xor	ax,ax
 	stosw
 	; ip: source IP
-	mov	si,my_ip
+	mov	si,offset my_ip
 	movsw
 	movsw
 	; ip: dest IP
-	mov	si,server_ip
+	mov	si,offset server_ip
 	movsw
 	movsw
 
@@ -422,8 +448,11 @@ udp_send:
 
 	; off it goes!
 	mov	ah,4			; pktdrv: send_pkt
-	mov	si,xmitbuf
+	mov	si,offset xmitbuf
 	mov	cx,bp
 	add	cx,OFFSET_UDPDATA	; ethernet+ip+udp headers
 	call	pktdrv_call
 	ret
+
+RESTEXT	ends
+	end

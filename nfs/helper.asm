@@ -1,5 +1,22 @@
 ; vim:set ts=8 sw=8 noet:
 
+include defines.inc
+include macro.inc
+
+RESTEXT		segment word public 'CODE'
+
+extern drive_no: byte
+extern handle_slots: byte
+extern next_dir_slot: byte
+extern dir_slots: byte
+
+public normalize_path
+public dir_slot_to_ptr
+public slot_to_ptr
+public verify_char
+public find_available_slot
+public get_dir_slot
+
 ; converts dos-based fully-qualified filename to zero-terminated chunks
 ; entry: es:si -> fq path (updated), cx = number of path pieces
 ; exit:  carry=1 on success, si = new offset
@@ -12,7 +29,7 @@ normalize_path:
 	db	26h	; es:
 	lodsb
 	sub	al,'@'
-	cmp	al,[drive_no]
+	cmp	al,byte ptr [drive_no]
 	jz	np_drive_ok
 
 	; drive not ours; reject
@@ -58,7 +75,7 @@ norm_end:
 	ret
 
 normalize_char:
-%if NFS_CASE==1
+if NFS_CASE==1
 	cmp	al,'a'
 	jl	norm_skip_ch
 	cmp	al,'z'
@@ -66,7 +83,7 @@ normalize_char:
 
 	; upper the char
 	and	al,0dfh
-%elif NFS_CASE==2
+elif NFS_CASE==2
 	cmp	al,'A'
 	jl	norm_skip_ch
 	cmp	al,'Z'
@@ -74,14 +91,14 @@ normalize_char:
 
 	; lowercase the char
 	or	al,20h
-%endif
+endif
 norm_skip_ch:
 	ret
 
 ; check if char in al is fine
 ; returns: carry=1 if so, carry=0 otherwise
 verify_char:
-%if NFS_CASE==1
+if NFS_CASE==1
 	cmp	al,'a'
 	jl	verify_skip_ch
 	cmp	al,'z'
@@ -90,7 +107,7 @@ verify_char:
 	; not ok
 	clc
 	ret
-%elif NFS_CASE==2
+elif NFS_CASE==2
 	cmp	al,'A'
 	jl	verify_skip_ch
 	cmp	al,'Z'
@@ -99,7 +116,7 @@ verify_char:
 	; not ok
 	clc
 	ret
-%endif
+endif
 verify_skip_ch:
 	; ok
 	stc
@@ -111,7 +128,7 @@ verify_skip_ch:
 find_available_slot:
 	xor	bx,bx
 	mov	cx,NUM_HANDLE_SLOTS
-	mov	di,handle_slots
+	mov	di,offset handle_slots
 
 find_loop:
 	mov	al,[ds:di]
@@ -137,7 +154,7 @@ find_loop_2:
 ; assumes: cs=ds=es
 get_dir_slot:
 	xor	bh,bh
-	mov	bl,[next_dir_slot]
+	mov	bl,byte ptr [next_dir_slot]
 
 	; next_dir_dir = (next_dir_slot + 1) % NUM_DIR_SLOTS
 	mov	dl,bl
@@ -148,7 +165,7 @@ get_dir_slot:
 	xor	dl,dl
 
 get_dir_slot_2:
-	mov	[next_dir_slot],dl
+	mov	byte ptr [next_dir_slot],dl
 	call	dir_slot_to_ptr
 
 	; clear the directory slot
@@ -175,7 +192,7 @@ slot_to_ptr:
 dir_slot_to_ptr:
 	mov	ax,DIR_SLOT_SIZE
 	mul	bx
-	add	ax,dir_slots
+	add	ax,offset dir_slots
 	mov	si,ax
 	ret
 
@@ -184,3 +201,6 @@ dir_slot_to_ptr:
 unixtime_to_fat:
 	xor	ax,ax
 	ret
+
+RESTEXT ends
+        end

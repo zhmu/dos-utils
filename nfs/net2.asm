@@ -1,6 +1,19 @@
 ; vim:set ts=8 sw=8 noet:
 
+_text	segment byte public use16 'code'
+
+include defines.inc
+include macro.inc
+include settings.inc
+
 ; NETWORK STUFF, NON-RESIDENT
+
+extern pktdrv_call: proc
+extern handle_ip: word
+extern handle_arp: word
+
+public pktdrv_search
+public pkt_unhook
 
 ; looks for a packet driver
 ; output: on success -> dl = packet driver interrupt (60h - 80h)
@@ -18,7 +31,7 @@ pktdrv_loop:
 
 	mov	cx,12		; need to scan 12 bytes
 
-	mov	si,pktdrv_sig
+	mov	si,offset pktdrv_sig
 	lodsb
 	repne	scasb
 	jne	pktdrv_skip
@@ -45,11 +58,18 @@ pktdrv_search_done:
 pkt_unhook:
 	; kill packet driver, ip part
 	mov	ah,3		; pktdrv: release_type
-	mov	bx,[handle_ip]
+	mov	bx,word ptr [handle_ip]
 	call	pktdrv_call
 
 	; kill packet driver, arp part
 	mov	ah,3		; pktdrv: release_type
-	mov	bx,[handle_arp]
+	mov	bx,word ptr [handle_arp]
 	call	pktdrv_call
 	ret
+
+
+pktdrv_sig	db	"PKT DRVR",0
+pktdrv_siglen	equ	$-pktdrv_sig
+
+_text	ends
+	end

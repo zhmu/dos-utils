@@ -1,10 +1,31 @@
 ; vim:set ts=8 sw=8 noet:
 
-%if RPC_SHOW_INDICATOR
+RESTEXT		segment word public 'CODE'
+
+include defines.inc
+include macro.inc
+include settings.inc
+
+extern recv_len: word
+extern udp_send: proc
+extern rpc_portmap: word
+extern rpc_versionmap: word
+extern rpc_portmap: word
+extern rpc_progmap: word
+extern xid: dword
+extern xmitbuf: byte
+extern recvbuf: byte
+
+public rpc_call
+public rpc_load_fh3
+public rpc_store_string
+public rpc_store_fh3
+
+if RPC_SHOW_INDICATOR
 rpc_indicator_seg:	dw	0xb800
 rpc_indicator_off:	dw	(78*2)
 rpc_indicator_prev:	dw	0
-%endif
+endif
 
 ; NOTE: ASSUMES ds=es=data !!!
 ; rpc_call: bp = length, bx = service, ax = procedure
@@ -20,17 +41,17 @@ rpc_call:
 	lea	si,[rpc_progmap+bx]	; si = rpc progname
 
 	; increment xid
-	inc	word [xid+0]
-	adc	word [xid+2],0
+	inc	word ptr [xid+0]
+	adc	word ptr [xid+2],0
 
 	push	ax				; store procedure
 
 	; start crafting the packet
-	mov	di,xmitbuf+OFFSET_UDPDATA	; frame+ip+udp header
+	mov	di,offset xmitbuf+OFFSET_UDPDATA	; frame+ip+udp header
 
-	mov	ax,word [xid+0]		; xid lo
+	mov	ax,word ptr [xid+0]		; xid lo
 	stosw
-	mov	ax,word [xid+2]		; xid hi
+	mov	ax,word ptr [xid+2]		; xid hi
 	stosw
 
 	; call
@@ -117,7 +138,7 @@ rpc_set_verifier:
 
 	; TODO: we should also handle errors here more
 	; sanely - maybe via timeout? retransmit?
-%if RPC_SHOW_INDICATOR
+if RPC_SHOW_INDICATOR
 	push	es
 	mov	ax,[rpc_indicator_seg]
 	mov	es,ax
@@ -127,7 +148,7 @@ rpc_set_verifier:
 	mov	ax,04d00h + 'N'
 	stosw
 	pop	es
-%endif
+endif
 
 	pushf
 	sti
@@ -149,8 +170,8 @@ rpc_reply_wait:
 	jl	rpc_reply_reset		; discard if too short
 
 	; parse the reply
-	mov	si,recvbuf
-	mov	di,xid
+	mov	si,offset recvbuf
+	mov	di,offset xid
 	mov	cx,2
 	repe	cmpsw
 	jne	rpc_reply_reset		; if not equal, discard packet
@@ -166,7 +187,7 @@ rpc_reply_wait:
 	; restore interrupts
 	popf
 
-%if RPC_SHOW_INDICATOR
+if RPC_SHOW_INDICATOR
 	; restore what was there
 	push	es
 	mov	ax,[rpc_indicator_seg]
@@ -175,7 +196,7 @@ rpc_reply_wait:
 	mov	ax,[rpc_indicator_prev]
 	stosw
 	pop	es
-%endif
+endif
 
 	; is the reply accepted?
 	lodsw
@@ -205,7 +226,7 @@ rpc_reply_wait:
 
 	; reply seems ok; calculate the length
 	mov	cx,si
-	sub	cx,recvbuf		; cx = amount we parsed
+	sub	cx,offset recvbuf	; cx = amount we parsed
 	sub	dx,cx			; dx = total - cx
 	mov	cx,dx
 
@@ -324,3 +345,6 @@ rpc_strlen_end:
 
 rpc_store_string_nopad:
 	ret
+
+RESTEXT	ends
+	end

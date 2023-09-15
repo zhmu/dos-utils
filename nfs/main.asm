@@ -1,91 +1,54 @@
 ; vim:set ts=8 sw=8 noet:
-CLASS_ETHERNET	equ	1
-HWADDR_LEN	equ	6
-PROTO_ICMP	equ	1h
-PROTO_UDP	equ	11h
 
-OFFSET_UDPDATA		equ	42
-OFFSET_DHCPOPTS		equ	OFFSET_UDPDATA+243
-OFFSET_RPCARGS		equ	82
-OFFSET_RPCARGS_NFS	equ	OFFSET_RPCARGS+20
+_text	segment byte public use16 'code'
 
-FH3SIZE		equ	64	; maximum
-COOKIE_SIZE	equ	8
-COOKIEV_SIZE	equ	8
+include settings.inc
+include defines.inc
+include macro.inc
 
-NUM_HANDLE_SLOTS	equ	4
-NUM_DIR_SLOTS 		equ	4
+extern pktdrv_call: proc
+extern rpc_call: proc
+extern rpc_store_string: proc
+extern rpc_load_fh3: proc
+extern parse_ip: proc
+extern parse_int: proc
+extern pkt_unhook: proc
+extern redir_unhook: proc
+extern pktdrv_search: proc
+extern printhex: proc
+extern arp_receiver: proc
+extern ip_receiver: proc
+extern dhcp_request: proc
+extern printip: proc
+extern printhwaddr: proc
+extern redir_init: proc
+extern resident_end: byte
 
-;
-; RESIDENT CODE ENDS HERE; data continues
-;
-
-arpbuf_len	equ	64			; minimal packet size
-pktbuf_len	equ	1536			; one ethernet frame
-pktbuf		times	pktbuf_len db 0
-arpbuf		times	arpbuf_len db 0
-xmitbuf		times	pktbuf_len db 0
-recvbuf		times	pktbuf_len db 0
-mount_fh	times	FH3SIZE+1 db 0
-temp_fh		times	FH3SIZE+1 db 0
-temp_fh2	times	FH3SIZE+1 db 0
-handle_slots	times	(FH3SIZE+1)*NUM_HANDLE_SLOTS db 0
-; each dir slot contains handle, cookie, cookiev
-DIR_SLOT_SIZE	equ	FH3SIZE+1+COOKIE_SIZE+COOKIEV_SIZE
-dir_slots	times	DIR_SLOT_SIZE*NUM_DIR_SLOTS db 0
-next_dir_slot	db	0
-
-; readdir state
-readdir_fname	dw	0	; offset in ds of filename
-readdir_flen	dw	0	; filename length (bytes)
-readdir_type	dw	0	; file type
-readdir_len	dd	0	; file length (bytes)
-readdir_time	dw	0
-readdir_date	dw	0
-
-xid		dd	0
-ip_id		dw	0
-my_ip		dd	0
-my_hwaddr	times	HWADDR_LEN db 0
-server_ip	db	255, 255, 255, 255
-server_hwaddr	times	HWADDR_LEN db 0
-server_hwaddr_valid	db	0
-recv_len	dw	0
-
-handle_arp	dw	0
-handle_ip 	dw	0
-
-rpc_progmap	dd	0a0860100h		; portmap (100000)
-		dd	0a5860100h		; mountd (100005)
-		dd	0a3860100h		; nfs (100003)
-
-rpc_portmap	dw	111			; portmap is always 111
-		dw	0			; unknown
-		dw	0			; unknown
-
-rpc_versionmap	dw	0200h			; portmap
-		dw	0300h			; mountd
-		dw	0300h			; nfs
-
-sda		dd	0
-drive_cds	dd	0
-drive_no	db	0			; 1 = A:, etc
-
-hextab		db	"0123456789abcdef"	; XXX only if REDIR_DEBUG_CALLS
-
-; RESIDENT DATA ends here
-resident_end	equ	$
+extern xmitbuf: byte
+extern my_hwaddr: byte
+extern my_ip: dword
+extern server_ip: byte
+extern server_hwaddr_valid: byte
+extern server_hwaddr: byte
+extern rpc_progmap: dword
+extern rpc_versionmap: word
+extern rpc_portmap: word
+extern mount_fh: byte
+extern pktdrv_int: byte
+extern xid: dword
+extern handle_arp: word
+extern handle_ip: word
 
 ; arp_get_server: requests the ethernet address for server_ip
 ; returns carry=1 on success
 arp_get_server:
-	mov	di,xmitbuf
+	mov	di,offset xmitbuf
 	xor	ax,ax
 	dec	ax			; destination hw address (ff)
 	stosw
 	stosw
 	stosw
-	mov	si,my_hwaddr		; source hw address
+	mov	si,offset my_hwaddr	; source hw address
 	movsw
 	movsw
 	movsw
@@ -99,24 +62,24 @@ arp_get_server:
 	stosw
 	mov	ax,0100h		; operation: request
 	stosw
-	mov	si,my_hwaddr		; source hw address
+	mov	si,offset my_hwaddr	; source hw address
 	movsw
 	movsw
 	movsw
-	mov	si,my_ip		; source ip
+	mov	si,offset my_ip		; source ip
 	movsw
 	movsw
 	xor	ax,ax			; dest hw
 	stosw
 	stosw
 	stosw
-	mov	si,server_ip
+	mov	si,offset server_ip
 	movsw
 	movsw
 
 	; off it goes!
 	mov	ah,4		; pktdrv: send_pkt
-	mov	si,xmitbuf
+	mov	si,offset xmitbuf
 	mov	cx,63
 	call	pktdrv_call
 
@@ -128,7 +91,7 @@ arp_get_server:
 	add	ax,18*3+1	; roughly 3 seconds
 
 arp_wait:
-	cmp	byte [server_hwaddr_valid],0
+	cmp	byte ptr [server_hwaddr_valid],0
 	jnz	arp_ok
 
 	cmp	[es:46ch],ax
@@ -155,19 +118,19 @@ portmap_get:
 	shl	bp,1			; bp = idx * 4
 
 	; prepare getport request
-	mov	di,xmitbuf+OFFSET_RPCARGS
+	mov	di,offset xmitbuf+OFFSET_RPCARGS
 	lea	si,[rpc_progmap+bp] ; program
 	movsw
 	movsw
 	; version, hi
 	xor	ax,ax
 	stosw
-	mov	ax,[rpc_versionmap+bx]	; version, lo
+	mov	ax,word ptr [rpc_versionmap+bx]	; version, lo
 	stosw
 	; protocol is always UDP
 	xor	ax,ax
 	stosw
-	mov	ax,PROTO_UDP << 8
+	mov	ax,(PROTO_UDP shl 8)
 	stosw
 	; port (zero, we want to know it)
 	xor	ax,ax
@@ -198,7 +161,7 @@ portmap_get_ok:
 	xchg	ah,al
 
 	; bx is still the service number * 2
-	mov	[rpc_portmap+bx],ax
+	mov	word ptr [rpc_portmap+bx],ax
 	stc
 	ret
 
@@ -207,7 +170,7 @@ portmap_get_ok:
 ; output: carry=1 on success -> mount_fh valid
 mountd_mount:
 	; make packet
-	mov	di,xmitbuf+OFFSET_RPCARGS
+	mov	di,offset xmitbuf+OFFSET_RPCARGS
 	xor	bp,bp
 	xor	bl,bl		; ds:si is zero-terminated
 	call	rpc_store_string
@@ -230,26 +193,21 @@ mountd_mount:
 	or	ax,ax
 	jne	mount_fail
 
-	mov	di,mount_fh
+	mov	di,offset mount_fh
 	jmp	rpc_load_fh3	; sets carry for us
 
 mount_fail:
 	clc
 	ret
 
-%include "dhcp.asm"
-%include "redir2.asm"
-%include "net2.asm"
-%include "helper2.asm"
-
 usage_err:
 	mov	ah,9
 	int	21h
-	mov	dx,crlf
+	mov	dx,offset crlf
 	int	21h
 usage:
 	mov	ah,9
-	mov	dx,msg_usage
+	mov	dx,offset msg_usage
 	int	21h
 	mov	ax,4c01h
 	int	21h
@@ -266,21 +224,21 @@ parse_cmdline:
 	stosb
 
 	; walk throught the command line one-by-one
-.p_loop:
+p_loop:
 	lodsb
 	or	al,al
-	jz	.p_end
+	jz	p_end
 	cmp	al,' '
-	je	.p_next
+	je	p_next
 	cmp	al,'/'
-	je	.p_arg
+	je	p_arg
 
 	; not a slash, not a space: must be the path to mount
 	dec	si
-	mov	[mount_path],si
-	jmp	.p_end
+	mov	word ptr [mount_path],si
+	jmp	p_end
 
-.p_arg:
+p_arg:
 	lodsw
 	cmp	al,'?'
 	je	usage
@@ -289,54 +247,56 @@ parse_cmdline:
 	cmp	al,'H'
 	je	usage
 	cmp	ax,'P:'
-	je	.p_pkt
+	je	p_pkt
 	cmp	ax,'p:'
-	je	.p_pkt
+	je	p_pkt
 	cmp	ax,'IP'
-	je	.p_ip
+	je	p_ip
 	cmp	ax,'ip'
-	je	.p_ip
+	je	p_ip
 
-.p_arg_bad:
-	mov	dx,msg_unknown_arg
+p_arg_bad:
+	mov	dx,offset msg_unknown_arg
 	jmp	usage_err
 
-.p_ip:	lodsb
+p_ip:	lodsb
 	cmp	al,':'
-	jne	.p_arg_bad
+	jne	p_arg_bad
 
 	; got a client IP now, try to parse
-	mov	di,my_ip
+	mov	di,offset my_ip
 	call	parse_ip
-	jnc	.p_next
+	jnc	p_next
 
-	mov	dx,msg_bad_ip
+	mov	dx,offset msg_bad_ip
 	jmp	usage_err
 
-.p_pkt:
+p_pkt:
 	mov	bx,16
 	call	parse_int
 	or	dh,dh
-	jnz	.p_pkt_bad
+	jnz	p_pkt_bad
 	cmp	dl,60h
-	jb	.p_pkt_bad
+	jb	p_pkt_bad
 	cmp	dl,80h
-	ja	.p_pkt_bad
+	ja	p_pkt_bad
 
-	mov	[pktdrv_int],dl
-	jmp	.p_next
+	mov	byte ptr [pktdrv_int],dl
+	jmp	p_next
 
-.p_pkt_bad:
-	mov	dx,msg_bad_pkt
+p_pkt_bad:
+	mov	dx,offset msg_bad_pkt
 	jmp	usage_err
 
-.p_next:
-	jmp	.p_loop
 
-.p_end:
+p_next:
+	jmp	p_loop
+
+p_end:
 	ret
 
-main:
+public main
+main	proc
 	; see if we are already installed
 	mov	ax,11feh	; installation check
 	mov	bx,5052h
@@ -351,8 +311,9 @@ main:
 
 	; patch packet driver irq over to our cs so that we can
 	; call it
-	mov	al,byte [ds:pktdrv_int]
-	mov	byte [cs:pktdrv_int],al
+	mov	bx,offset pktdrv_int
+	mov	al,byte ptr [ds:bx]
+	mov	byte ptr [cs:bx],al
 
 	call	pkt_unhook
 	call	redir_unhook
@@ -366,7 +327,7 @@ main:
 	pop	ds
 
 	mov	ah,9
-	mov	dx,uninstalled_msg
+	mov	dx,offset uninstalled_msg
 	int	21h
 
 	int	20h
@@ -374,27 +335,27 @@ main:
 not_installed:
 	call	parse_cmdline
 
-	mov	ax,[mount_path]
+	mov	ax,word ptr [mount_path]
 	or	ax,ax
-	jnz	.path_filled
+	jnz	path_filled
 
-	mov	dx,msg_no_path
+	mov	dx,offset msg_no_path
 	jmp	die
 
-.path_filled:
+path_filled:
 	; mount_path must be xx.xx.xx.xx:path - resolve the IP address
-	mov	di,nfs_server_ip
+	mov	di,offset nfs_server_ip
 	call	parse_ip
-	jnc	.server_ip_ok
+	jnc	server_ip_ok
 
-.server_ip_err:
-	mov	dx,msg_ip_error
+server_ip_err:
+	mov	dx,offset msg_ip_error
 	jmp	die
 
-.server_ip_ok:
+server_ip_ok:
 	cmp	al,':'
-	jne	.server_ip_err
-	mov	[mount_path],si		    ; points to path now
+	jne	server_ip_err
+	mov	word ptr [mount_path],si		    ; points to path now
 
 	; 'randomize' our xid, this keeps the server from
 	; thinking it already serviced our request
@@ -404,10 +365,10 @@ not_installed:
 	mov	ax,[es:46ch]	; timer tick lo
 	mov	bx,[es:46eh]	; timer tick hi
 	pop	es
-	mov	word [xid+0],ax
-	mov	word [xid+2],bx
+	mov	word ptr [xid+0],ax
+	mov	word ptr [xid+2],bx
 
-	mov	dl,[pktdrv_int]
+	mov	dl,byte ptr [pktdrv_int]
 	or	dl,dl
 	jnz	got_pktdrv
 
@@ -417,25 +378,25 @@ not_installed:
 	jne	found_pktdrv
 
 pktdrv_error:
-	mov	dx,nopkt
+	mov	dx,offset nopkt
 die:	mov	ah,9
 	int	21h
 	int	20h
 
 found_pktdrv:
 	; got one; patch it inside our code
-	mov	byte [pktdrv_int],dl
+	mov	byte ptr [pktdrv_int],dl
 
 got_pktdrv:
 	; and tell the user
 	push	dx
 	mov	ah,9
-	mov	dx,pktdrv_found
+	mov	dx,offset pktdrv_found
 	int	21h
 	pop	ax
 	call	printhex
 	mov	ah,9
-	mov	dx,pktdrv_found2
+	mov	dx,offset pktdrv_found2
 	int	21h
 
 	; see if the packet driver we found is sane
@@ -452,7 +413,7 @@ got_pktdrv:
 	je	pktclass_ok
 
 pktfail:
-	mov	dx,errpkt
+	mov	dx,offset errpkt
 	jmp	die
 
 pktclass_ok:
@@ -460,29 +421,29 @@ pktclass_ok:
 	mov	bx,dx			; if_type
 	mov	al,ch			; if_class
 	mov	dl,cl			; if_number
-	mov	si,type_arp		; ds:si = type
-	mov	di,arp_receiver		; es:di = receiver
+	mov	si,offset type_arp	; ds:si = type
+	mov	di,offset arp_receiver		; es:di = receiver
 	pushm	bx, cx, dx
 	mov	cx,2
 	call	pktdrv_call
 	popm	dx, cx, bx
 	jc	pktfail
-	mov	[handle_arp],ax
+	mov	word ptr [handle_arp],ax
 
 	mov	ah,2			; pktdrv: access_type
 	mov	al,ch			; if_class
-	mov	si,type_ip		; ds:si = type
-	mov	di,ip_receiver		; es:di = receiver
+	mov	si,offset type_ip	; ds:si = type
+	mov	di,offset ip_receiver		; es:di = receiver
 	mov	cx,2
 	call	pktdrv_call
 	jc	pktfail
-	mov	[handle_ip],ax
+	mov	word ptr [handle_ip],ax
 
 	; fetch hw address (why does this need a handle instead of an
 	; if_class/type/numer?)
 	mov	bx,ax			; handle
 	mov	ah,6			; pktdrv: get_address
-	mov	di,my_hwaddr
+	mov	di,offset my_hwaddr
 	mov	cx,6
 	call	pktdrv_call
 	jc	pkterr
@@ -490,44 +451,44 @@ pktclass_ok:
 	jne	pkterr
 
 	; fill out broadcast hw address
-	mov	di,server_hwaddr
+	mov	di,offset server_hwaddr
 	xor	ax,ax
 	dec	ax
 	mov	cx,3
 	rep	stosw
 
 	; see if we have an IP address; if so, skip DHCP
-	mov	si,my_ip
+	mov	si,offset my_ip
 	lodsw
 	mov	bx,ax
 	lodsw
 	or	ax,bx
-	jnz	.have_ip
+	jnz	have_ip
 
 	; use DHCP to obtain our IP address
 	call	dhcp_request
-	jc	.have_ip
+	jc	have_ip
 
-	mov	dx,dhcp_failure
+	mov	dx,offset dhcp_failure
 	jmp	pkterr_msg
 
-.have_ip:
+have_ip:
 	; tell the user about our IP address
 	mov	ah,9
-	mov	dx,ip_success
+	mov	dx,offset ip_success
 	int	21h
 
-	mov	si,my_ip
+	mov	si,offset my_ip
 	call	printip
 
 	mov	ah,9
-	mov	dx,crlf
+	mov	dx,offset crlf
 	int	21h
 
 	; copy nfs server to the server IP - this is the only host we'll be
 	; talking to from now on
-	mov	si,nfs_server_ip
-	mov	di,server_ip
+	mov	si,offset nfs_server_ip
+	mov	di,offset server_ip
 	movsw
 	movsw
 
@@ -535,19 +496,19 @@ pktclass_ok:
 	call	arp_get_server
 	jc	arp_server_ok
 
-	mov	dx,arp_failed
+	mov	dx,offset arp_failed
 	jmp	pkterr_msg
 
 arp_server_ok:
 	mov	ah,9
-	mov	dx,arp_msg
+	mov	dx,offset arp_msg
 	int	21h
 
-	mov	si,server_hwaddr
+	mov	si,offset server_hwaddr
 	call	printhwaddr
 
 	mov	ah,9
-	mov	dx,crlf
+	mov	dx,offset crlf
 	int	21h
 
 	; look up mountd port first
@@ -555,7 +516,7 @@ arp_server_ok:
 	call	portmap_get
 	jc	portmap_ok
 
-	mov	dx,mountport_failed
+	mov	dx,offset mountport_failed
 	jmp	pkterr_msg
 
 portmap_ok:
@@ -564,16 +525,16 @@ portmap_ok:
 	call	portmap_get
 	jc	nfsd_ok
 
-	mov	dx,nfsport_failed
+	mov	dx,offset nfsport_failed
 	jmp	pkterr_msg
 
 nfsd_ok:
 	; now mount our path
-	mov	si,[mount_path]
+	mov	si,word ptr [mount_path]
 	call	mountd_mount
 	jc	mount_ok
 
-	mov	dx,mount_failed
+	mov	dx,offset mount_failed
 	jmp	pkterr_msg
 
 mount_ok:
@@ -589,7 +550,7 @@ mount_ok:
 	int	21h
 
 	mov	ax,3100h	; dos: terminate, stay resident
-	mov	dx,resident_end
+	mov	dx,offset resident_end
 	shr	dx,1
 	shr	dx,1
 	shr	dx,1
@@ -600,11 +561,13 @@ mount_ok:
 pkterr_msg:
 	mov	ah,9
 	int	21h
-	mov	dx,crlf
+	mov	dx,offset crlf
 	int	21h
 pkterr:
 	call	pkt_unhook
+
 	int	20h
+main	endp
 
 ; NON-RESIDENT DATA
 msg_bad_pkt	db	'error: packet driver interrupt not in range 60..80$'
@@ -613,7 +576,7 @@ msg_unknown_arg	db	'error: unrecognized parameter$'
 msg_no_path	db	'error: mount path not supplied$'
 msg_ip_error	db	'error: mount path invalid, must be server_ip:path$'
 msg_usage	db	'NFSPKT - NFS filesystem driver for DOS (GPLv3)',10,13
-		db	'(c) 2020 Rink Springer <rink@rink.nu>',10,13
+		db	'(c) 2020-2023 Rink Springer <rink@rink.nu>',10,13
 		db	'https://github.com/zhmu/dos-utils',10,13
 		db	10,13
 		db	'usage: NFSPKT [/?h] [/p:xx] [/ip:x.x.x.x] server_ip:path',10,13
@@ -641,5 +604,7 @@ nfsport_failed	db	'Unable to lookup nfsd port$'
 type_arp	dw	0608h
 type_ip		dw	0008h
 
-pktdrv_sig	db	"PKT DRVR",0
-pktdrv_siglen	equ	$-pktdrv_sig
+uninstalled_msg	db	'Uninstalled$'
+
+_text	ends
+	end

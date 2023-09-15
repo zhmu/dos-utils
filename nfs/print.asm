@@ -1,5 +1,18 @@
 ; vim:set ts=8 sw=8 noet:
 
+RESTEXT		segment word public 'CODE'
+
+include defines.inc
+include macro.inc
+include settings.inc
+
+extern hextab: proc
+
+public printhex
+public printhex_word
+public printip
+public printhwaddr
+
 ; prints the digit in al [0..9] in decimal
 printdigit:
 	push	ax
@@ -61,7 +74,7 @@ printip3:
 printhexdigit:
 	xor	bh,bh
 	mov	bl,al
-	mov	al,[hextab+bx]
+	mov	al,byte ptr [hextab+bx]
 	mov	ah,0eh		; video: print digit in al
 	int	10h
 	ret
@@ -104,3 +117,6 @@ printhwaddr_n:
 	loop	printhwaddr_l
 
 	; NOTREACHED
+
+RESTEXT	ends
+	end

@@ -1,6 +1,35 @@
 ; vim:set ts=8 sw=8 noet:
 
-%define NFS3_DOS_GENERIC_ERROR 25 ; seek error
+RESTEXT		segment word public 'CODE'
+
+include defines.inc
+include macro.inc
+include settings.inc
+
+extern rpc_store_fh3: proc
+extern rpc_call: proc
+extern rpc_store_string: proc
+extern rpc_load_fh3: proc
+extern xmitbuf: proc
+extern readdir_flen: word
+extern readdir_fname: byte
+extern readdir_len: dword
+extern readdir_type: word
+extern readdir_time: word
+extern readdir_date: word
+extern mount_fh: byte
+
+public nfs3_write
+public nfs3_lookup
+public nfs3_create
+public nfs3_resolve_normalized
+public nfs3_getattr
+public nfs3_mkdir
+public nfs3_readdir
+public nfs3_read
+
+NFS3_DOS_GENERIC_ERROR equ 25 ; seek error
+NFS3_DOS_NONSPECIFIC_ERROR equ 21 ; drive not ready
 
 ; nfs3_readdir:
 ; input: ds:si = dirslot pointer, cs:di = callback function
@@ -15,7 +44,7 @@ nfs3_readdir:
 
 	; make packet
 	xor	bp,bp
-	mov	di,xmitbuf+OFFSET_RPCARGS_NFS	; es:di = buffer
+	mov	di,offset xmitbuf+OFFSET_RPCARGS_NFS	; es:di = buffer
 
 	; store directory handle - note: fh3 size is not guaranteed
 	; so we need to calculate the offset to the cookie ourselves
@@ -125,12 +154,12 @@ nfs3_readdir_loop:
 	jnz	nfs3_readdir_fail	; filename >255; this is likely a bug
 	lodsw
 	xchg	ah,al
-	mov	[readdir_flen],ax	; store length
-	mov	[readdir_fname],si	; store name
+	mov	word ptr [readdir_flen],ax	; store length
+	mov	word ptr [readdir_fname],si	; store name
 
 	xor	dx,dx
-	mov	word [readdir_len],dx
-	mov	word [readdir_len+2],dx
+	mov	word ptr [readdir_len],dx
+	mov	word ptr [readdir_len+2],dx
 
 	mov	dx,ax
 	add	si,ax			; skip name
@@ -171,11 +200,11 @@ nfs3_readir_nopad:
 
 	pushm	bx, cx, di
 	call	nfs3_parse_fattr
-	mov	[readdir_type],bx
-	mov	word [readdir_len+2],dx
-	mov	word [readdir_len],ax
-	mov	[readdir_time],cx
-	mov	[readdir_date],di
+	mov	word ptr [readdir_type],bx
+	mov	word ptr [readdir_len+2],dx
+	mov	word ptr [readdir_len],ax
+	mov	word ptr [readdir_time],cx
+	mov	word ptr [readdir_date],di
 	popm	di, cx, bx
 	sub	cx,84
 
@@ -240,7 +269,7 @@ nfs3_lookup:
 	pop	es
 
 	; make packet
-	mov	di,xmitbuf+OFFSET_RPCARGS_NFS	; es:di = @data:buffer
+	mov	di,offset xmitbuf+OFFSET_RPCARGS_NFS	; es:di = @data:buffer
 	xor	bp,bp
 
 	; store directory handle
@@ -304,7 +333,7 @@ nfs3_read:
 
 	; make packet
 	xor	bp,bp
-	mov	di,xmitbuf+OFFSET_RPCARGS_NFS	; es:di = buffer
+	mov	di,offset xmitbuf+OFFSET_RPCARGS_NFS	; es:di = buffer
 
 	; store directory handle
 	pushm	cx, ax, dx
@@ -417,7 +446,7 @@ nfs3_write:
 	; make packet
 	mov	bp,cx
 	add	bp,20
-	mov	di,xmitbuf+OFFSET_RPCARGS_NFS	; es:di = buffer
+	mov	di,offset xmitbuf+OFFSET_RPCARGS_NFS	; es:di = buffer
 
 	; store directory handle
 	pushm	cx, ax, dx
@@ -560,7 +589,7 @@ nfs3_create:
 
 	; make packet
 	mov	bp,32
-	mov	di,xmitbuf+OFFSET_RPCARGS_NFS
+	mov	di,offset xmitbuf+OFFSET_RPCARGS_NFS
 
 	; store file handle
 	mov	si,dx
@@ -654,7 +683,7 @@ nfs3_mkdir:
 
 	; make packet
 	mov	bp,28
-	mov	di,xmitbuf+OFFSET_RPCARGS_NFS	; es:di = buffer
+	mov	di,offset xmitbuf+OFFSET_RPCARGS_NFS	; es:di = buffer
 
 	; store file handle
 	mov	si,dx
@@ -717,7 +746,7 @@ nfs3_remove_generic:
 
 	; make packet
 	xor	bp,bp
-	mov	di,xmitbuf+OFFSET_RPCARGS_NFS
+	mov	di,offset xmitbuf+OFFSET_RPCARGS_NFS
 
 	; store file handle
 	call	rpc_store_fh3
@@ -768,7 +797,7 @@ nfs3_rename:
 
 	; make packet
 	xor	bp,bp
-	mov	di,xmitbuf+OFFSET_RPCARGS_NFS
+	mov	di,offset xmitbuf+OFFSET_RPCARGS_NFS
 
 	; store file handle for source filename
 	push	si
@@ -832,7 +861,7 @@ nfs3_resolve_normalized:
 	pushm	cx, si, es, ds
 	pop	es
 	mov	di,dx			; es:di = ds:dx
-	mov	si,mount_fh	        ; ds:si = mount_fh
+	mov	si,offset mount_fh	; ds:si = mount_fh
 	mov	cx,FH3SIZE
 	rep	movsb
 	popm	es, di, cx		; di = caller si
@@ -877,7 +906,7 @@ nfs3_getattr:
 
 	; make packet
 	xor	bp,bp
-	mov	di,xmitbuf+OFFSET_RPCARGS_NFS	; es:di = buffer
+	mov	di,offset xmitbuf+OFFSET_RPCARGS_NFS	; es:di = buffer
 
 	; store directory handle
 	call	rpc_store_fh3
@@ -971,7 +1000,7 @@ nfs3_map_loop:
 	jne	nfs3_map_loop
 
 	; map unknown errors here
-	mov	al,21			; drive not ready
+	mov	al,NFS3_DOS_NONSPECIFIC_ERROR
 
 nfs3_map_ok:
 	lodsb
@@ -992,3 +1021,6 @@ nfs3_error_tab:
     db 30, 19	    ; NFS3ERR_ROFS, disk write protected
     db 70, 2	    ; NFS3ERR_STALE, file not found
     db 0, 0
+
+RESTEXT	ends
+	end

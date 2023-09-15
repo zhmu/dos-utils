@@ -18,12 +18,3 @@ RPC_SHOW_INDICATOR equ 1
 
 ; 0 = keep case as/is (bad idea), 1 = force uppercase, 2 = force lowercase
 NFS_CASE equ 1
-
-;include net.asm
-;include rpc.asm
-;include nfs.asm
-;include redir.asm
-;include helper.asm
-;include print.asm
-
-;include main.asm

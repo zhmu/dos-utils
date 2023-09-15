@@ -1,5 +1,42 @@
 ; vim:set ts=8 sw=8 noet:
 
+RESTEXT		segment word public 'CODE'
+
+include defines.inc
+include macro.inc
+include settings.inc
+
+extern sda: dword
+extern normalize_path: proc
+extern nfs3_resolve_normalized: proc
+extern nfs3_mkdir: proc
+extern nfs3_lookup: proc
+extern nfs3_create: proc
+extern find_available_slot: proc
+extern nfs3_getattr: proc
+extern drive_no: byte
+extern printhex: proc
+extern slot_to_ptr: proc
+extern printhex_word: proc
+extern nfs3_write: proc
+extern nfs3_read: proc
+extern drive_cds: dword
+extern get_dir_slot: proc
+extern nfs3_readdir: proc
+extern readdir_flen: word
+extern readdir_fname: word
+extern readdir_len: dword
+extern readdir_type: word
+extern readdir_time: word
+extern readdir_date: word
+extern temp_fh: byte
+extern temp_fh2: byte
+extern dir_slot_to_ptr: proc
+extern verify_char: proc
+
+public int_2f
+public old_2f
+
 ; sda = #01687 interrup.g
 sda_curdta  equ 0ch ; current DTA (disk transfer address)
 sda_fn1	    equ 9eh
@@ -11,12 +48,12 @@ sda_eopen_attr	equ 2dfh    ; extended open attribute (01769)
 sda_eopen_fmode	equ 2e1h    ; extended open file mode (AX=6c00h)
 
 ; 01626, interrupt.g
-struc	    sdb
-sdb_drive   resb    1	    ; 0
-sdb_templ   resb    11	    ; 1
-sdb_sattr   resb    1	    ; c
-sdb_entry   resw    1	    ; d
-endstruc
+sdb	    struc
+sdb_drive   db	    0		    ; 0
+sdb_templ   db	    '???????????'   ; 1
+sdb_sattr   db	    0		    ; c
+sdb_entry   dw	    0		    ; d
+sdb	    ends
 
 ; redirect callbacks
 f_md:
@@ -29,7 +66,7 @@ f_md:
 	jnc	f_error_with_code
 
 	; resolve the path up until the new piece
-	mov	dx,temp_fh
+	mov	dx,offset temp_fh
 	call	nfs3_resolve_normalized
 	jnc	f_error_with_code
 
@@ -45,18 +82,18 @@ copy_fn1_sft:
 	; this before doing anything else as we'll replace the name inplace
 	; later
 	xor	bx,bx
-.f_find_last:
+f_find_last:
 	lodsb
 	or	al,al
-	jz	.f_find_last_end
+	jz	f_find_last_end
 
 	cmp	al,'\'
-	jnz	.f_find_last
+	jnz	f_find_last
 
 	mov	bx,si			; bx = last slash + 1
-	jmp	.f_find_last
+	jmp	f_find_last
 
-.f_find_last_end:
+f_find_last_end:
 	; ds:bx = last path piece, es:di = sft
 	add	di,20h			; es:di = sft.fcb
 
@@ -71,22 +108,22 @@ copy_fn1_sft:
 	; now convert ASCIIZ-based filename in ds:bx to FCB-based in es:di
 	mov	si,bx
 	mov	cx,di
-.r_fill_fcb:
+r_fill_fcb:
 	lodsb
 	or	al,al
-	jz	.r_fill_done
+	jz	r_fill_done
 	cmp	al,'.'
-	jne	.r_fill_copy
+	jne	r_fill_copy
 
 	mov	di,cx
 	add	di,9			; go to extension piece
-	jmp	.r_fill_fcb
+	jmp	r_fill_fcb
 
-.r_fill_copy:
+r_fill_copy:
 	stosb
-	jmp	.r_fill_fcb
+	jmp	r_fill_fcb
 
-.r_fill_done:
+r_fill_done:
 	ret
 
 ; 16 (open existing file), 17 (create/trunc file) and 2e (extended open file)
@@ -104,24 +141,24 @@ generic_open_create:
 	lds	si,[sda]
 	lea	si,[si+sda_fn1]
 
-%if DEBUG_REDIR_OPENCREATE
+if DEBUG_REDIR_OPENCREATE
 	mov	ax,0e00h + 'G'
 	int	10h
 	mov	al,'{'
 	int	10h
 	push	si
-.p_loop:
+op_loop:
 	lodsb
 	or	al,al
-	jz	.p_done
+	jz	op_done
 	int	10h
-	jmp	.p_loop
+	jmp	op_loop
 
-.p_done:
+op_done:
 	pop	si
 	mov	al,','
 	int	10h
-%endif
+endif
 
 	push	di
 	call	copy_fn1_sft
@@ -134,12 +171,12 @@ generic_open_create:
 
 	; normalize it
 	call	normalize_path
-	jnc	.fail_pop
+	jnc	fail_pop
 
 	; resolve until the last piece
-	mov	dx,temp_fh
+	mov	dx,offset temp_fh
 	call	nfs3_resolve_normalized
-	jnc	.fail_pop
+	jnc	fail_pop
 
 	; TODO: find slot here so we don't accidently change something when out of handles
 
@@ -147,8 +184,8 @@ generic_open_create:
 	mov	ax,di
 	pushm	es, ds
 	pop	es
-	mov	si,temp_fh
-	mov	di,temp_fh2
+	mov	si,offset temp_fh
+	mov	di,offset temp_fh2
 	mov	cx,FH3SIZE+1
 	rep	movsb
 	pop	es
@@ -156,82 +193,82 @@ generic_open_create:
 	mov	di,ax
 	; di = final path piece - look the final piece up
 	push	di
-	mov	dx,temp_fh
+	mov	dx,offset temp_fh
 	call	nfs3_lookup
 	pop	di
-	jc	.resolve_ok
+	jc	resolve_ok
 
-%if DEBUG_REDIR_OPENCREATE
+if DEBUG_REDIR_OPENCREATE
 	; put '*' to show it does not yet exist
 	mov	ax,0e00h + '*'
 	int	10h
-%endif
+endif
 
 	; does not exist; supposed to?
 	mov	al,[g_action]
 	and	al,0f0h
-	jz	.fail_not_exist
+	jz	fail_not_exist
 	cmp	al,010h
-	je	.create
+	je	create
 
 	; unknown action
 
-.fail_not_exist:
+fail_not_exist:
 	mov	al,2			; file not found
-.fail_pop:
+fail_pop:
 	popm	es, di
-.fail:
-%if DEBUG_REDIR_OPENCREATE
+fail:
+if DEBUG_REDIR_OPENCREATE
 	push	ax
 	mov	ax,0e00h + '-'
 	int	10h
 	pop	ax
-%endif
+endif
 	stc
 	ret
 
-.resolve_ok:
+resolve_ok:
 	; ok, this exists. supposed to?
 	mov	al,[g_action]
 	and	al,15
 	cmp	al,1
-	je	.open_it
+	je	open_it
 	cmp	al,2
-	jne	.fail_not_exist
+	jne	fail_not_exist
 
-.create:
+create:
 	; need to replace the file
-%if DEBUG_REDIR_OPENCREATE
+if DEBUG_REDIR_OPENCREATE
 	mov	ax,0e00h + 'T'		; truncating
 	int	10h
-%endif
+endif
 	; copy temp_fh2 back to temp_fh - it could have been overwritten by a
 	; successful lookup
 	pushm	es, di, ds
 	pop	es
-	mov	si,temp_fh2
-	mov	di,temp_fh
+	mov	si,offset temp_fh2
+	mov	di,offset temp_fh
 	mov	cx,FH3SIZE+1
 	rep	movsb
 	popm	di, es
 
 	xor	bx,bx			; truncate
-	mov	dx,temp_fh
+	mov	dx,offset temp_fh
 	call	nfs3_create
-	jnc	.fail_pop
+	jnc	fail_pop
 
-.open_it:
+open_it:
 	; XXX maybe use ACCESS before we continue?
 
 	; now find a slot for the directory handle - we can't stash it in
 	; the SFT because there isn't space :-(
 	call	find_available_slot
-	jnc	.fail_pop
+	jnc	fail_pop
 
 	; copy filehandle to the slot in ds:di
 	push	ds
 	pop	es
-	mov	si,temp_fh
+	mov	si,offset temp_fh
 	mov	cx,FH3SIZE+1
 	rep	movsb
 
@@ -245,12 +282,12 @@ generic_open_create:
 	mov	[es:di+0bh],bx			; starting cluster -> slot
 
 	; obtain the file stats
-	mov	si,temp_fh
+	mov	si,offset temp_fh
 	push	di
 	call	nfs3_getattr
 	mov	bx,di				; bx = date
 	pop	di
-	jnc	.fail				; XXX fix error code
+	jnc	fail				; XXX fix error code
 
 	mov	[es:di+11h],ax			; file size lo
 	mov	[es:di+13h],dx			; file size hi
@@ -271,10 +308,10 @@ generic_open_create:
 	mov	[es:di+17h],ax			; current offset hi
 
 	; all is okay
-%if DEBUG_REDIR_OPENCREATE
+if DEBUG_REDIR_OPENCREATE
 	mov	ax,0e00h + '+'
 	int	10h
-%endif
+endif
 	clc
 	ret
 
@@ -319,7 +356,7 @@ f_eopen:
 	mov	al,[es:si+sda_eopen_act]
 	pop	es
 
-%if DEBUG_REDIR_OPENCREATE
+if DEBUG_REDIR_OPENCREATE
 	push	ax
 	mov	bl,al
 	mov	ax,0e00h + '<'
@@ -329,7 +366,7 @@ f_eopen:
 	mov	al,'>'
 	int	10h
 	pop	ax
-%endif
+endif
 	jmp	set_gaction_and_go
 
 f_close:
@@ -348,7 +385,7 @@ f_close:
 
 f_read:
 	; on entry: es:di = sft, cx = count of bytes to read
-%if DEBUG_REDIR_READ
+if DEBUG_REDIR_READ
 	mov	ax,0e00h + '{'
 	int	10h
 	mov	al,'R'
@@ -363,7 +400,7 @@ f_read:
 	call	printhex_word
 	mov	ax,0e00h + ','
 	int	10h
-%endif
+endif
 
 	; look up handle to ds:si
 	mov	bx,[es:di+0bh]
@@ -387,7 +424,6 @@ read_loop:
 	jnc	read_no_seg_incr
 
 	; handle overflow (can this happen?)
-	int3
 	push	ax
 	mov	ax,es
 	add	ax,1000h
@@ -409,7 +445,7 @@ read_size_ok:
 
 	; advance file pointer
 	add	[es:di+15h],cx
-	adc	word [es:di+17h],0
+	adc	word ptr [es:di+17h],0
 
 	add	[ss:bp+sf_cx],cx
 
@@ -422,20 +458,19 @@ read_size_ok:
 
 read_eof:
 	; all set
-
-%if DEBUG_REDIR_READ
+if DEBUG_REDIR_READ
 	mov	ax,0e00h + '+'
 	int	10h
 	mov	ax,[ss:bp+sf_cx]	; bx = bytes to read
 	call	printhex_word
 	mov	ax,0e00h + '}'
 	int	10h
-%endif
+endif
 	clc
 	ret
 
 read_error:
-%if DEBUG_REDIR_READ
+if DEBUG_REDIR_READ
 	push	ax
 	mov	ax,0e00h + '-'
 	int	10h
@@ -444,15 +479,15 @@ read_error:
 	mov	ax,0e00h + '}'
 	int	10h
 	pop	ax
-%endif
-	mov	word [ss:bp+sf_ax],ax
+endif
+	mov	[ss:bp+sf_ax],ax
 	stc
 	ret
 
 ; 09 - write
 f_write:
 	; on entry: es:di = sft, cx = count of bytes to write
-%if DEBUG_REDIR_WRITE
+if DEBUG_REDIR_WRITE
 	mov	ax,0e00h + '{'
 	int	10h
 	mov	al,'W'
@@ -467,7 +502,7 @@ f_write:
 	call	printhex_word
 	mov	ax,0e00h + ','
 	int	10h
-%endif
+endif
 
 	; look up handle to ds:si
 	mov	bx,[es:di+0bh]
@@ -491,7 +526,8 @@ write_loop:
 	jnc	write_no_seg_incr
 
 	; handle overflow (can this happen?)
-	int3
+	; FIXME
+	int	3
 	push	ax
 	mov	ax,es
 	add	ax,1000h
@@ -512,7 +548,7 @@ write_size_ok:
 
 	; advance file pointer
 	add	[es:di+15h],cx
-	adc	word [es:di+17h],0
+	adc	word ptr [es:di+17h],0
 
 	add	[ss:bp+sf_cx],cx
 
@@ -521,19 +557,19 @@ write_size_ok:
 
 	; all done
 
-%if DEBUG_REDIR_WRITE
+if DEBUG_REDIR_WRITE
 	mov	ax,0e00h + '+'
 	int	10h
 	mov	ax,[ss:bp+sf_cx]	; bx = bytes to write
 	call	printhex_word
 	mov	ax,0e00h + '}'
 	int	10h
-%endif
+endif
 	clc
 	ret
 
 write_error:
-%if DEBUG_REDIR_WRITE
+if DEBUG_REDIR_WRITE
 	push	ax
 	mov	ax,0e00h + '-'
 	int	10h
@@ -542,8 +578,8 @@ write_error:
 	mov	ax,0e00h + '}'
 	int	10h
 	pop	ax
-%endif
-	mov	word [ss:bp+sf_ax],ax
+endif
+	mov	[ss:bp+sf_ax],ax
 	stc
 	ret
 
@@ -571,7 +607,7 @@ f_chdir_notroot:
 
 	; resolve the full path
 	inc	cx
-	mov	dx,temp_fh
+	mov	dx,offset temp_fh
 	pushm	si, cx
 	call	nfs3_resolve_normalized
 	popm	cx, si
@@ -579,7 +615,7 @@ f_chdir_notroot:
 
 	; obtain the file stats
 	pushm	si, cx
-	mov	si,temp_fh
+	mov	si,offset temp_fh
 	call	nfs3_getattr
 	popm	cx, si
 	jnc	f_error_with_code
@@ -639,7 +675,7 @@ f_gattr:
 
 	; resolve the path including the new piece
 	inc	cx
-	mov	dx,temp_fh
+	mov	dx,offset temp_fh
 	call	nfs3_resolve_normalized
 	jnc	f_error_with_code
 
@@ -662,11 +698,11 @@ f_gattr_dir:
 	mov	bx,10h				; directory attribute
 
 f_gattr_ok:
-	mov	word [ss:bp+sf_ax],bx	; attributes
-	mov	word [ss:bp+sf_bx],dx	; size, hi
-	mov	word [ss:bp+sf_di],ax	; size, lo
-	mov	word [ss:bp+sf_cx],cx	; time
-	mov	word [ss:bp+sf_dx],di	; date
+	mov	[ss:bp+sf_ax],bx	; attributes
+	mov	[ss:bp+sf_bx],dx	; size, hi
+	mov	[ss:bp+sf_di],ax	; size, lo
+	mov	[ss:bp+sf_cx],cx	; time
+	mov	[ss:bp+sf_dx],di	; date
 
 	clc
 	ret
@@ -697,7 +733,7 @@ f_ffirst:
 
 	; resolve the path up until the final piece, which is the
 	; wildcard
-	mov	dx,temp_fh
+	mov	dx,offset temp_fh
 	call	nfs3_resolve_normalized
 	jnc	f_error_with_code
 
@@ -750,7 +786,7 @@ sdb_copy_done:
 	; copy the file handle to the dir slot
 	push	si
 	mov	di,si
-	mov	si,temp_fh
+	mov	si,offset temp_fh
 	mov	cx,FH3SIZE+1
 	rep	movsb
 	pop	si
@@ -772,7 +808,7 @@ f_do_readdir:
 
 ff_no_files:
 	mov	ax,18		; no more files
-	mov	word [ss:bp+sf_ax],ax
+	mov	[ss:bp+sf_ax],ax
 	stc
 	ret
 
@@ -815,8 +851,8 @@ f_find_callback_first:
 	jne	f_find_callback_skip	; not file/dir
 
 f_find_callback_typeok:
-%if DEBUG_REDIR_DIRLIST
-	mov	cx,[readdir_len]
+if DEBUG_REDIR_DIRLIST
+	mov	cx,word ptr [readdir_len]
 	mov	si,[readdir_fname]
 	mov	ax,0e00h+'{'
 	int	10h
@@ -830,7 +866,7 @@ rd_loop_x:
 
 	mov	ax,0e00h+'}'
 	int	10h
-%endif
+endif
 	; type is fine
 	push	es
 
@@ -894,27 +930,27 @@ f_find_callback_copy_done_isdir:
 	stosw				; time
 	stosw				; date
 	stosw				; cluster
-	mov	ax,word [readdir_len]
+	mov	ax,word ptr [readdir_len]
 	stosw
-	mov	ax,word [readdir_len+2]
+	mov	ax,word ptr [readdir_len+2]
 	stosw
 	pop	es
 
-%if DEBUG_REDIR_DIRLIST
+if DEBUG_REDIR_DIRLIST
 	mov	ax,0e00h+'+'
 	int     10h
-%endif
+endif
 
 	; increment state
-	inc	byte [f_find_flag]
+	inc	[f_find_flag]
 	stc
 	ret
 
 f_find_callback_pop_es_skip:
-%if DEBUG_REDIR_DIRLIST
+if DEBUG_REDIR_DIRLIST
 	mov	ax,0e00h+'-'
 	int     10h
-%endif
+endif
 	pop	es
 
 f_find_callback_skip:
@@ -1048,7 +1084,6 @@ cv_piece:
 	loop	cv_piece
 	ret
 
-
 f_rd:
 f_commit:
 f_lock:
@@ -1062,7 +1097,7 @@ f_seek:
 	mov	ax,5 ; perm denied
 
 f_error_with_code:
-	mov	word [ss:bp+sf_ax],ax
+	mov	[ss:bp+sf_ax],ax
 	stc
 	ret
 
@@ -1072,10 +1107,10 @@ f_info:
 	mov	cx,512
 	mov	dx,1234
 
-	mov	word [ss:bp+sf_ax],ax
-	mov	word [ss:bp+sf_bx],bx
-	mov	word [ss:bp+sf_cx],cx
-	mov	word [ss:bp+sf_dx],dx
+	mov	[ss:bp+sf_ax],ax
+	mov	[ss:bp+sf_bx],bx
+	mov	[ss:bp+sf_cx],cx
+	mov	[ss:bp+sf_dx],dx
 	clc
 	ret
 
@@ -1166,7 +1201,7 @@ int_2f:	; XXX we don't save flags here, as we expect the redirector
 	push	cs
 	pop	ds		; ds = cs
 
-%if REDIR_DEBUG_CALLS
+if REDIR_DEBUG_CALLS
 	pushm	ax, bx
 	push	ax
 	mov	ax,0e00h+'('
@@ -1176,7 +1211,7 @@ int_2f:	; XXX we don't save flags here, as we expect the redirector
 	mov	ax,0e00h+')'
 	int	10h
 	popm	bx, ax
-%endif
+endif
 
 	; calculate function offset
 	xor	ah,ah
@@ -1215,7 +1250,7 @@ inst_check:
 handle_func:
 	mov	bx,ax
 	and     bx,7fffh		; clear top bit
-	mov	bx,word [bx]		; bx = stored func
+	mov	bx,[bx]			; bx = stored func
 	or	bx,bx
 	jz	chain_2f_with_restore	; chain (no need to check more)
 
@@ -1244,9 +1279,9 @@ check_cds:
 	mov	dx,[es:si+284h]		; current cds, seg
 	popm	si, es
 
-	cmp	ax,word [drive_cds]
+	cmp	ax,word ptr [drive_cds]
 	jne	chain_2f_with_restore
-	cmp	dx,word [drive_cds+2]
+	cmp	dx,word ptr [drive_cds+2]
 	jne	chain_2f_with_restore
 
 	; our cds matches, we can continue
@@ -1254,18 +1289,18 @@ check_cds:
 invoke_func:
 	; clear carry of caller - we can then just use cf
 	; as return value to see if we need to fail or not
-	and	byte [ss:bp+sf_flags],0feh
+	and	byte ptr [ss:bp+sf_flags],0feh
 
 	; grab word from stack, some functions need that
-	mov	ax,word [ss:bp+sf_extra]
+	mov	ax,[ss:bp+sf_extra]
 
 	; invoke our function
 	call	bx
 	jnc	no_error
 
 	; set cf and copy ax over to caller stack
-	or	byte [ss:bp+sf_flags],1
-	mov	word [ss:bp+sf_ax],ax
+	or	byte ptr [ss:bp+sf_flags],1
+	mov	[ss:bp+sf_ax],ax
 
 no_error:
 	pop	es
@@ -1278,3 +1313,6 @@ no_error:
 
 	;db	512 dup (?)
 ;redir_stack	db 0
+
+RESTEXT	ends
+	end
