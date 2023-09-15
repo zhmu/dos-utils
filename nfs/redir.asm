@@ -1084,10 +1084,14 @@ cv_piece:
 	loop	cv_piece
 	ret
 
-f_rd:
-f_commit:
 f_lock:
 f_unlock:
+	; ignore lock/unlock requests
+	clc
+	ret
+
+f_rd:
+f_commit:
 f_sattr:
 f_rename:
 f_delete:
