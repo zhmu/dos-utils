@@ -17,17 +17,9 @@ extern pktbuf: byte
 extern recvbuf: byte
 extern xmitbuf: byte
 extern ip_id: word
+extern pktdrv_call: proc
 
-public pktdrv_call
 public udp_send
-public pktdrv_int
-
-pktdrv_call    proc
-		db	0cdh	; INT
-pktdrv_int:
-		db	0	; patched as needed
-		ret
-pktdrv_call    endp
 
 e_hdr		struc
 eh_dst:		db	6 dup (?)	; 0

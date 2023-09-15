@@ -34,7 +34,6 @@ extern rpc_progmap: dword
 extern rpc_versionmap: word
 extern rpc_portmap: word
 extern mount_fh: byte
-extern pktdrv_int: byte
 extern xid: dword
 extern handle_arp: word
 extern handle_ip: word
@@ -281,7 +280,7 @@ p_pkt:
 	cmp	dl,80h
 	ja	p_pkt_bad
 
-	mov	byte ptr [pktdrv_int],dl
+	mov	byte ptr [pktdrv_call+1],dl
 	jmp	p_next
 
 p_pkt_bad:
@@ -311,7 +310,7 @@ main	proc
 
 	; patch packet driver irq over to our cs so that we can
 	; call it
-	mov	bx,offset pktdrv_int
+	mov	bx,offset pktdrv_call+1
 	mov	al,byte ptr [ds:bx]
 	mov	byte ptr [cs:bx],al
 
@@ -333,6 +332,14 @@ main	proc
 	int	20h
 
 not_installed:
+	; overwrite entrypoint with packet driver call
+	mov	di,offset pktdrv_call
+	mov	ax,000cdh	    ; int 00h
+	stosw
+	mov	al,0c3h		    ; ret
+	stosb
+
+	; handle command line arguments (may overwrite pktdrv interrupt)
 	call	parse_cmdline
 
 	mov	ax,word ptr [mount_path]
@@ -368,7 +375,7 @@ server_ip_ok:
 	mov	word ptr [xid+0],ax
 	mov	word ptr [xid+2],bx
 
-	mov	dl,byte ptr [pktdrv_int]
+	mov	dl,byte ptr [pktdrv_call+1]
 	or	dl,dl
 	jnz	got_pktdrv
 
@@ -385,7 +392,7 @@ die:	mov	ah,9
 
 found_pktdrv:
 	; got one; patch it inside our code
-	mov	byte ptr [pktdrv_int],dl
+	mov	byte ptr [pktdrv_call+1],dl
 
 got_pktdrv:
 	; and tell the user

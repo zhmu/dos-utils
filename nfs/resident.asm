@@ -3,6 +3,13 @@ RESTEXT		segment word public 'CODE'
 
 extern main: proc
 
+public pktdrv_call
+
+; pktdrv_call will be patched to INT xx, RET; this conveniently overwrites
+; the bootstrap jmp instruction, saving a whole 3 bytes
+pktdrv_call:
+
+; entry point (overwritten)
 _entry:
             jmp main
 
