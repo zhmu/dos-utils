@@ -19,3 +19,7 @@ TSR that allows you to map a NFSv3 server over IPv4 to a DOS drive letter.
 ## IDE geometry override bootsector
 
 Custom bootsector that queries the first IDE device for the disk geometry and programs this in the BIOS. Useful when using CompactFlash cards on old systems that do not support custom disk geometries.
+
+## DOScript
+
+Allows you to control your DOS-based machine over a serial connection, useful for scripting purposes.
