@@ -24,8 +24,6 @@ serial_irq          proc
                     push    dx
                     push    di
 
-                    int 3
-
                     mov     ax,seg DGROUP
                     mov     ds,ax
 
@@ -65,8 +63,6 @@ serial_irq          endp
 
 public serial_init_irqs_
 serial_init_irqs_   proc    near
-
-                    int 3
 
                     push    ds
                     push    es

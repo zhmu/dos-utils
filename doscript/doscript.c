@@ -300,7 +300,6 @@ static int handshake()
         }
         sio_write('?');
         delay(1000);
-        int3();
     }
     return 1;
 }
