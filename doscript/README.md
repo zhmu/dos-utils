@@ -10,9 +10,7 @@ This allows you to control your DOS-based machine using a serial connection.
 
 # Building
 
-Simply run ``build.sh`` - you need to have [OpenWatcom](https://github.com/open-watcom/open-watcom-v2) (I used the [September 2023 snapshop of version 2.0](https://github.com/open-watcom/open-watcom-v2/releases/tag/2023-09-01-Build)) and mtools installed.
-
-The output is a 1.44MB floppy disk image, ``floppy.img``, which contains a ``d.exe`` which is the DOScript utility.
+Simply run ``build.sh`` - you need to have [OpenWatcom](https://github.com/open-watcom/open-watcom-v2) (I used the [September 2023 snapshop of version 2.0](https://github.com/open-watcom/open-watcom-v2/releases/tag/2023-09-01-Build)) installed. The resulting binary will be available in ``build/doscript.exe``.
 
 ## Usage
 
@@ -26,4 +24,3 @@ You can use QEMU to test this code; use ``mkfifo /tmp/serial.in /tmp/serial.out`
 
 - The code is hardcoded to COM2, 115200/8N1. This should be configurable
 - Corrupted chunks when sending files are properly detected, but retries aren't implemented
-- Random hangs when executing a program (maybe the ISR code is buggy? Need to look into this...)

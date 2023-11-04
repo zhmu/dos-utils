@@ -3,9 +3,7 @@
 A simply tool to transfer files from your development machine to your retro machine over RS-232.
 
 ## Building
-Simply run ``build.sh`` - you need to have nasm and mtools installed.
-
-The output is a 1.44MB floppy disk image, ``floppy.img``, which contains a ``x.com`` which is the transfer utility.
+Simply run ``build.sh`` - you need to have nasm installed. The resulting binary is available ``build/xfer.com``.
 
 ## Usage
 - Set up a null-modem cable (only RXD/TXD/GND are needed) between the development and legacy machines

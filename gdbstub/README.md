@@ -3,12 +3,10 @@
 This will allow you to use the GNU debugger's remote debugging capabilities to debug your retro project using a serial port. The stub is intended for 16 bit real-mode applications on an XT or up.
 
 ## Building
-Simply run ``build.sh`` - you need to have nasm and mtools installed.
-
-The output is a 1.44MB floppy disk image, ``floppy.img``, which contains a ``g.com`` which is the GDB stub.
+Simply run ``build.sh`` - you need to have nasm installed. The resulting binary is available in ``build/gdbtub.com``.
 
 ## Usage
-Run ``g.com`` to install the TSR (again to uninstall).
+Run ``gdbstub.com`` to install the TSR (again to uninstall).
 
 The TSR will intercept INT3 instructions; upon encountering, execution will be suspended and the GDB debugging protocol will be used.
 
