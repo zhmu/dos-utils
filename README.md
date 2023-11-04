@@ -23,3 +23,7 @@ Custom bootsector that queries the first IDE device for the disk geometry and pr
 ## DOScript
 
 Allows you to control your DOS-based machine over a serial connection, useful for scripting purposes.
+
+## DOSVGM
+
+DOS-based Video Game Music (VGM) player for VGM/VGZ files. Supports Adlib, Sound Blaster and OPL2LPT/OPL3LPT output devices.
