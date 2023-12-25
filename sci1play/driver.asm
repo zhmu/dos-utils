@@ -142,9 +142,9 @@ call_driver_0       macro fn
                     mov     bp,fn
                     call    _driver_entry
                     pop     bp
-                    pop     bx
-                    pop     cx
                     pop     dx
+                    pop     cx
+                    pop     bx
                     endm
 
 ; 1 argument: cl
