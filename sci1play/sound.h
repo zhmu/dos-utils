@@ -17,6 +17,10 @@ struct TRACK_INFO {
     uint8_t channel;
     uint8_t flags;
     uint8_t mute;
+    // loop
+    uint16_t loop_point;
+    uint16_t loop_rest;
+    uint8_t loop_command;
     // info
     uint16_t cur_note;
 };
@@ -26,3 +30,4 @@ extern struct TRACK_INFO track_info[MAX_TRACKS];
 int sound_load(const char* path);
 int sound_init(uint8_t dev_id);
 void sound_server();
+void sound_loop();

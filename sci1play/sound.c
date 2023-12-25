@@ -107,12 +107,15 @@ static void sysex(struct TRACK_INFO* ti)
 static void ControlChnl(struct TRACK_INFO* ti)
 {
     uint8_t v, w;
+    int n;
+
     switch(ti->command) {
         case PCHANGE:
             // [doCue]
             v = getb(ti);
             if (v == 127) {
-                // Loop set - get rest value (do not consume byte)
+                // Loop set - get rest value (do not consume byte, this is
+                // used in the loop below)
                 v = sound_data[ti->offset];
                 if (v == TIMINGOVER) {
                     ti->rest = 0x8000 | 240;
@@ -120,13 +123,14 @@ static void ControlChnl(struct TRACK_INFO* ti)
                     ti->rest = v;
                 }
                 ti->command = 0xc0;
-                // TODO for all channels 'ti'
-                // - copy values 'ti->rest' to 'ti->loopRest',
-                // - 'ti->command' to 'ti->loopCommand'
-                // - 'ti->timer' to 'ti->loopTimer'
-                //
-                // Note that we'll continue looking at the next byte, which
-                // seems to be the intention...
+                for(n = 0; n < MAX_TRACKS; ++n) {
+                    track_info[n].loop_point = track_info[n].offset;
+                    track_info[n].loop_rest = track_info[n].rest;
+                    track_info[n].loop_command = track_info[n].command;
+                }
+                // Note that we'll continue looking at the next byte (v), which
+                // seems to be the intention... it'll be a rest byte
+                ti->rest = 0;
                 CH_LOG(ti, "[control] loop set");
                 break;
             }  else {
@@ -191,7 +195,10 @@ void sound_server()
             // [notEndTrk]
             if (ti->channel == 15) {
                 ControlChnl(ti);
-                // TODO: compare index = 0, then it's end point
+                if (ti->offset == 0) {
+                    // done with track - don't parse more commands
+                    goto out_track;
+                }
             } else {
                 // [notControlCh]
                 switch(ti->command) {
@@ -328,6 +335,11 @@ int sound_init(uint8_t drv_dev_id)
         // Reset state
         ti->cur_note = 0xff;
 
+        // Loop info
+        ti->loop_point = offset + 3;
+        ti->loop_rest = 3;
+        ti->loop_command = 0;
+
         // Mixing 'copy SOUND data' / [UpdateChannel2] to immediately set the values
         d_controller(ti->channel, CTRL_ALLNOFF, 0);
 
@@ -348,3 +360,14 @@ int sound_init(uint8_t drv_dev_id)
     }
     return 1;
 }
+
+void sound_loop()
+{
+    int n;
+    for(n = 0; n < MAX_TRACKS; ++n) {
+        track_info[n].offset = track_info[n].loop_point;
+        track_info[n].rest = track_info[n].loop_rest;
+        track_info[n].command = track_info[n].loop_command;
+    }
+}
+

@@ -21,6 +21,7 @@ void far* patch_data = NULL;
 
 uint32_t timer_tick;
 static int verbose = 0;
+static int loop = 0;
 static int playback_volume = 15;
 
 static struct DRIVER_INFO drv_info;
@@ -135,6 +136,7 @@ static void help(const char* prog)
     printf("options can be:\n");
     printf("  -h, -help   this help\n");
     printf("  -v          verbose\n");
+    printf("  -l          loop sound (plays forever)\n");
     printf("  -dfile.drv  use file.drv as audio driver (default: %s)\n", DEFAULT_DRIVER);
     printf("  -pn         set playback volume to n (0..15, default: %d)\n", playback_volume);
     printf("\n");
@@ -152,6 +154,10 @@ static int parse_args(int argc, char* argv[])
         }
         if (strcmp(argv[n]+1, "v") == 0) {
             ++verbose;
+            continue;
+        }
+        if (strcmp(argv[n]+1, "l") == 0) {
+            ++loop;
             continue;
         }
         if (argv[n][1] == 'd') {
@@ -197,8 +203,13 @@ static int play_file_ui(const char* path)
             continue;
 
         if (count_active_ch() == 0) {
-            printf("all channels finished, stopping...\n");
-            break;
+            if (loop) {
+                printf("looping sound\n");
+                sound_loop();
+            } else {
+                printf("all channels finished, stopping...\n");
+                break;
+            }
         }
 
         sound_server();
