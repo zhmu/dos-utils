@@ -10,8 +10,6 @@ If you found any of these utilities useful, please let me know at rink@rink.nu !
 * [IDE geometry override bootsector](ide-geom/README.md): custom bootsector to override the bios CHS settings with the drive's
 * [DOScript](doscript/README.md): allows you to control your DOS-based machine over a serial connection (intended for scripting purposes)
 * [DOSVGM](dosvgm/README.md): DOS-based Video Game Music (VGM) player for VGM/VGZ files. Supports Adlib, Sound Blaster and OPL2LPT/OPL3LPT output devices.
-* [SCI0PLAY](sci0play/README.md): Allows playback of Sierra's Creative Interpreter version 0 (SCI0) songs on MS-DOS using the original drivers.
-* [SCI1PLAY](sci1play/README.md): Allows playback of Sierra's Creative Interpreter version 1 (SCI1) songs on MS-DOS using the original drivers.
 
 ## Prerequisites
 
